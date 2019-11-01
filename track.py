@@ -230,12 +230,13 @@ def main():
     # filename = 'tracks/track_100x100.png'
     #filename = 'tracks/track_100x100_simple.png'
     #filename = 'tracks/track_100x100_B.png'
-    filename = 'tracks/track_100x100_C.png'
+    # filename = 'tracks/track_100x100_C.png'
 #    filename = 'tracks/track_100x100_line.png'
     #filename = 'tracks/track_100x100_s_curve.png'
-    #filename = 'tracks/track_1000x1000_u_curve.png'
+    # filename = 'tracks/track_1000x1000_u_curve.png'
     #filename = 'tracks/track_1000x1000_s_curve.png'
-#    filename = 'tracks/track_1000x1000_s_curve2.png'
+    # filename = 'tracks/track_1000x1000_s_curve2.png'
+    filename = 'tracks/track_1000x1000_zig_zag.png'
     # filename = 'tracks/track_100x100_white.png'
     # filename = 'tracks/track_100x100_crazy.png'
 
@@ -252,17 +253,17 @@ def main():
 
     t.print_distances()
 
-    indiv = 1000
-    max_gen = 50
+    indiv = 20
+    max_gen = 10000
 
     neurals = list()
     for n in range(indiv):
         #neurals.append(network (11,(4,4)))
-        neurals.append(network (11,(4,4)))
+        neurals.append(network (9, (4, 4)))
 
     robots = list()
     for i in range (indiv):
-        r = robot (start_pos, start_heading, 8,color=robot.GREEN,sensors_pitch=20,sensors_dist=100)
+        r = robot (start_pos, start_heading, 8,color=robot.GREEN,sensors_pitch=5,sensors_dist=40)
         r.set_path_read_func(t.get_path)
         r.set_path_distance_func(t.get_distance)
         r.set_control_func(neurals[i].evaluate)
@@ -270,6 +271,7 @@ def main():
         robots.append(r)
 
     generation = 0
+    generation_scores = list()
     for g in range (max_gen):
         print ("Starting generation {}".format(generation))
         for r in robots:
@@ -337,15 +339,26 @@ def main():
         print ("#"*40)
         print ("\nEnded generation {}".format(generation))
         print ("Best robot got to distance {}".format(best_robot.get_last_distance_to_finish()))
+        generation_scores.append(best_robot.get_last_distance_to_finish())
         #time.sleep(0.2)
         print ("#"*40)
-        t.print_robots_over_distances(robots,print_sensors=False)
+        #t.print_robots_over_distances(robots,print_sensors=False)
+        t.print_robots_over_distances([best_robot],print_sensors=True)
         generation += 1
 
-        best_robot_gains = list(best_robot.control_unit.get_gains())
-        robots[0].control_unit.set_gains(best_robot_gains) 
-        for r in robots[1:]:
-            r.control_unit.set_gains(mutation(best_robot_gains))
+        best_robot_gains = best_robot.control_unit.get_gains()
+        # keep_best_indiv = True
+        keep_best_indiv = False
+
+        for r in robots:
+            r.control_unit.set_gains(mutation(list(best_robot_gains)))
+
+        # for r in robots:
+        #     r.control_unit.set_gains(mutation(best_robot_gains))
+
+        if keep_best_indiv:
+            robots[0].control_unit.set_gains(best_robot_gains) 
+
 
         #zz = input("press enter")
 
@@ -357,6 +370,9 @@ def main():
     t.print_robots_over_distances(robots,print_sensors=True)
     zz = input("press enter")
     
+    print(generation_scores)
+    print("######")
+    print(generation_scores.sorted())
     
     pygame.quit()
     exit()

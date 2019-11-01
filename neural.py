@@ -7,8 +7,10 @@ def random_gain ():
 
 class neuron :
     def __init__(self, n_inputs, gains):
-        if n_inputs != len(gains):
-            raise Exception ("Incorrect amount of gain values provided. {}!={}".format(n_inputs,len(gains)))
+        #count bias value as a required gain value
+        self.required_gains = n_inputs + 1
+        if self.required_gains != len(gains):
+            raise Exception ("Incorrect amount of gain values provided. {}!={}".format(self.required_gains,len(gains)))
         self.n_inputs = n_inputs
         self.gains = list(gains)
         self.out_func = self.default_out_func
@@ -25,6 +27,8 @@ class neuron :
         sum = 0
         for i in range(self.n_inputs):
             sum += self.gains[i] * inputs[i]
+        #sum the bias
+        sum += self.gains[-1]
         # print ("neuron result:", sum)
         return self.out_func(sum)
 
@@ -32,13 +36,14 @@ class neuron :
         return self.gains
 
     def set_gains (self,new_gains):
-        self.gains = list(new_gains[:self.n_inputs])
+        self.gains = list(new_gains[:self.required_gains])
         # print (self.gains)
-        return list(new_gains[self.n_inputs:])
+        return list(new_gains[self.required_gains:])
 
 class layer:
     def __init__(self, n_inputs, n_neurons, gains=None):
-        self.required_gains = n_neurons * n_inputs
+        #add an additional required gain to act as bias on each neuron
+        self.required_gains = n_neurons * (n_inputs + 1)
         self.n_neurons = n_neurons
         self.n_inputs = n_inputs
         print ("Create a layer with {} inputs and {} outputs".format (self.n_inputs, self.n_neurons))
@@ -54,7 +59,7 @@ class layer:
         self.gains = list(gains)
         self.neurons = list()
         for i in range(self.n_neurons):
-            self.neurons.append(neuron(self.n_inputs, gains[i*self.n_inputs:(i+1)*self.n_inputs]))
+            self.neurons.append(neuron(self.n_inputs, gains[i*(self.n_inputs+1):(i+1)*(self.n_inputs+1)]))
 
     def evaluate (self, inputs):
         out = list()
@@ -83,7 +88,7 @@ class network:
         self.required_gains = 0
         inputs = n_inputs
         for l in layers_setup:
-            self.required_gains += inputs * l
+            self.required_gains += (inputs + 1) * l
             inputs = int(l)
         print ("{} gains required for this network".format(self.required_gains))
 
@@ -97,9 +102,9 @@ class network:
             if self.gains==None:
                 gains = None
             else:
-                gains = self.gains[gains_used:gains_used + inputs*outputs]
-                gains_used += inputs*outputs
-            self.layers.append(layer(inputs, outputs,gains=gains))
+                gains = self.gains[gains_used:gains_used + (inputs + 1)*outputs]
+                gains_used += (inputs + 1)*outputs
+            self.layers.append(layer(inputs, outputs, gains=gains))
             inputs = outputs
 
     def evaluate (self, inputs):
@@ -116,7 +121,7 @@ class network:
             for i in range(self.required_gains):
                 new_gains.append(random_gain())
         for l in self.layers:
-            new_gains = l.set_gains(new_gains)
+            new_gains = list(l.set_gains(new_gains))
         return new_gains
 
     def get_gains (self):
@@ -129,17 +134,23 @@ class network:
     
 def mutation (gains):
     gains_len = len(gains)
-    gains_to_mutate = int(np.random.rand() * gains_len * 0.2) 
+    gains_to_mutate = int(np.random.rand() * gains_len * 1) 
     
-    for g in range (gains_to_mutate):
+    mutated = 0
+
+    while mutated < gains_to_mutate:
+        mutated += 1
         gain_pos = int(np.random.rand()*gains_len)
         mutate_type =  round(np.random.rand() * 3)
         if mutate_type == 0:   #set a new random value
             gains[gain_pos] = random_gain()
         elif mutate_type == 1: #random multiply
+            # gains[gain_pos] *= (1+ 0.1*random_gain())
             gains[gain_pos] *= random_gain()
         else:   #random sum
+            # gains[gain_pos] += 0.1*random_gain()
             gains[gain_pos] += random_gain()
+    # print ("Mutated:", mutated)
     return gains
     
     
@@ -147,6 +158,6 @@ def mutation (gains):
 
 if __name__ == "__main__":
     n = network (10,[4])
-    print("\t\tFinal result:",n.evaluate([1,1,1,1]))
+    print("\t\tFinal result:", n.evaluate([1,1,1,1]))
 
     inputs = [np.random.normal(),np.random.normal(),np.random.normal(),np.random.normal()]

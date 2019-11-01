@@ -54,11 +54,11 @@ class robot:
     def __init__(self, init_point, init_heading, n_sensors,color=WHITE,sensors_pitch=10,sensors_dist=100):
         self.alive = True
         self.speed = 0
-        self.max_speed = 10
+        self.max_speed = 2
         self.heading = init_heading
         self.position = init_point
         self.acc = 1
-        self.turn_rate = np.deg2rad(1)
+        self.turn_rate = np.deg2rad(2)
         self.n_sensors = n_sensors
         self.sensors_dist = sensors_dist
         self.sensors_pitch = sensors_pitch
@@ -176,8 +176,8 @@ class robot:
 
         inputs = list()
         inputs.append(self.speed)
-        inputs.append(self.heading)
-        inputs.append(1)
+        # inputs.append(self.heading)
+        # inputs.append(1)
         for s in self.calculate_sensor_positions():
             inputs.append(self.path_read_func(s))
 
