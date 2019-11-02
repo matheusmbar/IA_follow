@@ -3,7 +3,9 @@
 import numpy as np
 
 def random_gain ():
-    return np.random.rand() *10 - 5
+#    return np.random.rand() *10 - 5
+#    return np.random.rand()*2 - 1
+    return np.random.normal()
 
 class neuron :
     def __init__(self, n_inputs, gains):
@@ -46,7 +48,7 @@ class layer:
         self.required_gains = n_neurons * (n_inputs + 1)
         self.n_neurons = n_neurons
         self.n_inputs = n_inputs
-        print ("Create a layer with {} inputs and {} outputs".format (self.n_inputs, self.n_neurons))
+        #print ("Create a layer with {} inputs and {} outputs".format (self.n_inputs, self.n_neurons))
         if gains == None:
             gains = list()
             for g in range(self.required_gains):
@@ -90,7 +92,7 @@ class network:
         for l in layers_setup:
             self.required_gains += (inputs + 1) * l
             inputs = int(l)
-        print ("{} gains required for this network".format(self.required_gains))
+        #print ("{} gains required for this network".format(self.required_gains))
 
         self.layers = list()
 
@@ -152,12 +154,25 @@ def mutation (gains):
             gains[gain_pos] += random_gain()
     # print ("Mutated:", mutated)
     return gains
+
+def mutation2 (gains):
+    gains_len = len(gains)
+    gains_to_mutate = int(np.random.rand() * gains_len * 1) 
     
+    mutated = 0
+
+    while mutated < gains_to_mutate:
+        mutated += 1
+        gain_pos = int(np.random.rand()*gains_len)
+        gains[gain_pos] = random_gain()
+    # print ("Mutated:", mutated)
+    return gains
     
 
 
 if __name__ == "__main__":
-    n = network (10,[4])
-    print("\t\tFinal result:", n.evaluate([1,1,1,1]))
+#    n = network (10,[4])
+#    print("\t\tFinal result:", n.evaluate([1,1,1,1]))
 
-    inputs = [np.random.normal(),np.random.normal(),np.random.normal(),np.random.normal()]
+#    inputs = [np.random.normal(),np.random.normal(),np.random.normal(),np.random.normal()]
+    exit()

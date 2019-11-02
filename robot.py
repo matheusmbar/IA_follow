@@ -169,6 +169,12 @@ class robot:
         self.moved = False
         self.steps_without_moving = 0
         self.last_position = point(start_point.x, start_point.y)
+    
+    def update_fitness (self):
+        self.fitness = self.get_last_distance_to_finish()
+    
+    def get_fitness (self):
+        return self.fitness
 
     def run (self):
         if self.alive == False:
