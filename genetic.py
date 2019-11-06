@@ -23,13 +23,14 @@ class Genetic ():
         parents = self.results[:keep_indiv]
         
         parents_indexes = list(range(keep_indiv)) * int(np.ceil(create_indiv/keep_indiv) + 1)
-        shuffle(parents_indexes)
+#        shuffle(parents_indexes)
 
         sons = list()
         for i in range(int(np.ceil(create_indiv/2))):
-            p_1 = parents_indexes[i*2]
-            p_2 = parents_indexes[i*2+1]
-            out_1, out_2 = self.cross_pair(parents[p_1], parents[p_2])
+#            p_1 = parents_indexes[i*2]
+#            p_2 = parents_indexes[i*2+1]
+#            out_1, out_2 = self.cross_pair(parents[p_1], parents[p_2])
+            out_1, out_2 = self.cross_pair(parents[0], parents[1])
 
             sons.append(out_1)
             sons.append(out_2)
