@@ -159,7 +159,7 @@ class robot:
             self.distance_to_finish = self.path_distance_func(self.position)
 
     def set_position(self, new_position):
-        self.position = point (new_position.x, new_position.y)
+        self.position = point(new_position.x, new_position.y)
 
     def reset (self, start_point, start_heading):
         self.alive = True

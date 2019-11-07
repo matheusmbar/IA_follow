@@ -71,6 +71,7 @@ class Robot(pygame.sprite.Sprite):
         self.best_distance = None
         self.improved_this_step = False
         self.last_sensor_reads = list()
+        self.steps_run = 0
 
         #robot config parameters
         self.n_sensors = n_sensors
@@ -107,7 +108,6 @@ class Robot(pygame.sprite.Sprite):
             p = point.Point(center.x + sensors_dist,
                             center.y + (i - (n_sensors-1)/2)*sensors_pitch)
             sensors_pos.append(p)
-            #print(p)
 
         if(isinstance(pos, point.Point)):
             self.pos = pos
@@ -126,7 +126,6 @@ class Robot(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.centerx, self.rect.centery = self.pos.get_int_xy()
         self.set_angle_rad(heading)
-        #print(self.rect)
     
     def get_inputs_amount (self):
         return len(self.get_inputs())
@@ -178,6 +177,27 @@ class Robot(pygame.sprite.Sprite):
     
     def get_last_valid_distance(self):
         return self.last_valid_distance
+    
+    def set_max_distance(self, max_distance):
+        self.max_distance = max_distance
+
+    def get_fitness_distances(self):
+        last__valid_dist = self.get_last_valid_distance()
+        max_dist = self.max_distance
+        val = (max_dist - last__valid_dist)/max_dist
+        
+        return val
+    
+    def get_fitness_sensors(self):
+        val = (self.steps_run - self.steps_sensors_off_track) / self.steps_run
+        return val
+    
+    def get_fitness(self):
+        w_dist = 0.9
+        w_sensors = 0.1
+        w_sum = w_dist + w_sensors
+        return (w_dist * self.get_fitness_distances() + w_sensors*self.get_fitness_sensors())/w_sum
+        
 
     def get_sensor_position(self, sensor_id):
         # front sensors are numbered from left to right, with `sensors_pitch` distance between them
@@ -187,18 +207,17 @@ class Robot(pygame.sprite.Sprite):
         sensor_x = self.sensors_dist
         sensor_y = ((self.n_sensors - 1)/2 - sensor_id) * self.sensors_pitch
 
-        #transform into polar coordinates
-        z = (sensor_x + sensor_y * 1j)
-        r, theta = coord.z2polar(z)
+        #transform into polar coordinates 
+        r, theta = coord.xy2polar(sensor_x, sensor_y)
 
         #sum heading to theta to calculate sensor position in reference to robot position
         new_theta = theta + self.heading
-        new_z = coord.polar2z(r, new_theta)
+        new_x, new_y = coord.polar2xy(r, new_theta)
         #calculate final position in reference to track's origin
-        final_sensor_x = np.real(new_z) + self.pos.x
-        final_sensor_y = np.imag(new_z) + self.pos.y
+        final_sensor_x = self.pos.x + new_x
+        final_sensor_y = self.pos.y - new_y #inverted sign due to inverted Y axis direction
 
-        return point.Point(int(final_sensor_x), int(final_sensor_y))
+        return point.Point(final_sensor_x, final_sensor_y)
 
     def calculate_sensor_positions(self):
         self.sensor_positions = list()
@@ -210,11 +229,9 @@ class Robot(pygame.sprite.Sprite):
         
     def check_alive(self):
         if self.path_read_func(self.pos) is None:
-            #print ("out of bounds at: ", self.position)
             self.alive = False
 
         if self.path_read_func(self.pos) == -1:
-            #print ("died at: ", self.position)
             self.steps_off_track += 1
             if (self.steps_off_track >= self.max_off_track):
                 self.alive = False
@@ -224,25 +241,12 @@ class Robot(pygame.sprite.Sprite):
         if self.improved_this_step is False:
             self.steps_without_improving += 1
             if self.steps_without_improving > self.max_without_improving:
-#                print ("{} is not improving for {} steps".format(self.id, self.steps_without_improving))
                 self.alive = False
         else:
             self.steps_without_improving = 0
         
         if self.steps_without_moving >= self.max_without_moving:
-#            print ("{} stalled at: {}".format(self.id, self.pos))
             self.alive = False
-            
-        #check sensors out of track
-#        if len(self.last_sensor_reads) > 0:
-#            if len([i for i in self.last_sensor_reads if i >= 0]) == 0:
-#                self.steps_sensors_off_track += 1
-#                if self.steps_sensors_off_track >= self.max_sensors_off_track:
-#                    self.alive = False
-#            else:
-#                self.steps_sensors_off_track = 0
-                
-                    
         
         return self.alive
 
@@ -254,6 +258,11 @@ class Robot(pygame.sprite.Sprite):
             self.steps_without_moving += 1
         self.last_position = self.pos.copy()
         return self.moved
+    
+    def check_sensors_off_track(self):
+        if len(self.last_sensor_reads) > 0:
+            if len([i for i in self.last_sensor_reads if i >= 0]) == 0:
+                self.steps_sensors_off_track += 1
 
     def calc_new_position(self):
         x, y = coord.polar2xy(self.speed, self.heading)
@@ -289,11 +298,11 @@ class Robot(pygame.sprite.Sprite):
         self.improved_this_step = False
         self.last_sensor_reads = list()
         self.steps_sensors_off_track = 0
+        self.steps_run = 0
 
     def get_inputs(self):
         inputs = list()
         inputs.append(self.speed)
-        # inputs.append(self.heading)
         self.last_sensor_reads = list()
         for s in self.calculate_sensor_positions():
             read = self.path_read_func(s)
@@ -305,35 +314,35 @@ class Robot(pygame.sprite.Sprite):
         if self.alive is False:
             return False
         self.update_count += 1
+        self.steps_run += 1
 
         acc, brake, left, right = self.control_func(self.get_inputs())
+        self.check_sensors_off_track()
         
-#        print ("old pos: {} old heading: {}".format(self.pos, np.rad2deg(self.heading)))
         if acc:
+#            speed_acc = self.acc * (np.arctan(acc) / (np.pi * 2))
             speed_change = self.acc * (np.arctan(acc) / (np.pi * 2))
             self.speed = min(self.speed + speed_change, self.max_speed)
         if brake:
+#            speed_brake = self.acc * (np.arctan(brake) / (np.pi * 2))
             speed_change = self.acc * (np.arctan(brake) / (np.pi * 2))
-#            self.speed = min(self.speed + speed_change, self.max_speed)
             self.speed = max(self.speed - speed_change, (-1)*self.max_speed)
         if left:
+#            angle_left = self.turn_rate * (np.arctan(left) / (np.pi * 2))
             turn_angle = self.turn_rate * (np.arctan(left) / (np.pi * 2))
             self.set_angle_rad(self.heading + turn_angle)
         if right:
+#            angle_right = self.turn_rate * (np.arctan(right) / (np.pi * 2))
             turn_angle = self.turn_rate * (np.arctan(right) / (np.pi * 2))
             self.set_angle_rad(self.heading - turn_angle)
 
         #limit heading to pi
         self.calc_new_position()
-#        print ("new pos: {} new heading: {}".format(self.pos, np.rad2deg(self.heading)))
         self.check_alive()
         self.check_moved()
         if(self.alive is False):
-            #print ("Returning to last alive position:", self.last_position)
             self.set_pos(self.last_position)
         self.calc_new_distances()
-#        print("x: {: 3}\ty: {: 3}\tacc: {: 2.2}\tbrake: {: 2.2}\tleft: {: 2.2}\tright: {: 2.2}\tspeed: {: 2.2f}\theading: {:2.2f}"\
-#            .format(self.pos.x,self.pos.y,float(acc), float(brake), float(left), float(right), float(self.speed),np.rad2deg(self.heading)))
         return True
 
 
@@ -358,7 +367,6 @@ class Track (pygame.sprite.Sprite):
         self.distances_plot = None
         self.start_point = None
         self.from_image(image)
-        #self.win = pygame.display.set_mode((self.size_x, self.size_y))
 
 
     def calc_distances (self, print_steps=False):
@@ -453,7 +461,6 @@ class Track (pygame.sprite.Sprite):
         for x in range(self.size_x):
             for y in range(self.size_y):
                 p = point.Point(x,y)
-#                pix = self.image.getpixel((x,self.size_y - 1 - y))
                 pix = self.image.getpixel((x,y))
                 if pix == self.START_COLOR:
                     if self.start_point == None:
@@ -511,9 +518,12 @@ class Track (pygame.sprite.Sprite):
                     if (dist % 20 == 0):
                         color = (255,255,255)
                     self.distances_image.set_at((p.x, p.y), color)
+        self.distances_image.set_at((10, 50), (0, 255, 0))
+        self.distances_image.set_at((11, 50), (0, 255, 0))
+        self.distances_image.set_at((10, 51), (0, 255, 0))
+        self.distances_image.set_at((11, 51), (0, 255, 0))
         
 def update():
-#    robots_list.draw(screen)
     pygame.display.flip()
 
 def update_thread (sprite_group, surface):
@@ -549,174 +559,204 @@ def get_key_movement(inputs):
                 exit()
     return [acc, brake, left, right]
 
-pygame.init()
-
-
-key_control = False
-
-
-#filename = 'tracks/track_100x100_simple.png'
-#filename = 'tracks/track_100x100_white.png'
-#filename = 'tracks/track_1000x1000_zig_zag.png'
-#filename = 'tracks/track_1000x1000_s_curve2.png'
-#filename = 'tracks/track_1000x1000_s_curve.png''
-#filename = 'tracks/track_1000x1000_s_curve3.png'
-#filename = 'tracks/track_1000x1000_s_curve4.png'
-#filename = 'tracks/track_1000x1000_s_curve5.png'
-filename = 'tracks/track_1000x1000_fast_training.png'
-#filename = 'tracks/track_1000x1000_u_curve.png'
-#filename = 'tracks/track_1000x1000_ss.png'
-#filename = 'tracks/track_100x100_simple.png'
-#filename = 'tracks/track_100x100_line.png'
-#filename = 'tracks/track_100x100_C.png'
-#filename = 'tracks/track_10x10.png'
-#filename = 'tracks/test2.png'
-#filename = 'tracks/test3.png'
-#filename = 'tracks/test4.png'
-#filename = 'tracks/test5.png'
-#filename = 'tracks/test6.png'
-
-
-im = Image.open(filename)
-t = Track(im.resize((1000,1000)))
-pygame.quit()
-exit()
-
-screen_width = t.size_x
-screen_height = t.size_y
-screen = pygame.display.set_mode([screen_width, screen_height])
-pygame.display.set_caption("IA follow")
-
-background_list = pygame.sprite.Group()
-background_list.add(t)
-
-robots_list = pygame.sprite.Group()
-
-start_pos = t.start_point
-#start_heading = (Robot.HEADING_MINUS_X + Robot.HEADING_MINUS_Y)/2
-start_heading = Robot.HEADING_MINUS_X
-
-indiv = 500
-max_gen = 20000
-
-threads_count = 8
-robot_groups = list()
-for i in range(threads_count):
-    robot_groups.append(pygame.sprite.Group())
-
-
-if (key_control):
-    indiv = 1
-
-neurals = list()
-for n in range(indiv):
-    neurals.append(network (9, (4, 6, 4)))
-#    neurals.append(network (9, (9,6, 4,)))
-
-for i in range(indiv):
-    r = Robot(WHITE, 8, 10, 100, heading=start_heading, pos=start_pos)
-    r.set_path_read_func(t.get_path)
-    r.set_path_distance_func(t.get_distance)
-    r.set_control_func(neurals[i].evaluate)
+def simple_control(inputs):
+    speed = inputs[0]
+    print (inputs)
+    brake = 0
+    acc = 0
+    left = 0
+    right = 0
     
+    if speed < 0.2:
+        acc = 0.5
+    if inputs[1] < 0:
+        right = 1
+    if inputs[4] < 0:
+        left = 1
+    print ([acc, brake, left, right])
+    return acc, brake, left, right
+
+
+if __name__ == "__main__":
+    pygame.init()
+
+
+    key_control = False
+
+
+    # filename = 'tracks/track_100x100_simple.png'
+    #filename = 'tracks/track_100x100_white.png'
+    #filename = 'tracks/track_1000x1000_zig_zag.png'
+    #filename = 'tracks/track_1000x1000_s_curve2.png'
+    #filename = 'tracks/track_1000x1000_s_curve.png''
+    #filename = 'tracks/track_1000x1000_s_curve3.png'
+    #filename = 'tracks/track_1000x1000_s_curve4.png'
+    # filename = 'tracks/track_1000x1000_s_curve5.png'
+    filename = 'tracks/track_1000x1000_fast_training.png'
+    #filename = 'tracks/track_1000x1000_u_curve.png'
+    # filename = 'tracks/track_1000x1000_ss.png'
+    # filename = 'tracks/track_100x100_simple.png'
+    #filename = 'tracks/track_100x100_line.png'
+    #filename = 'tracks/track_100x100_C.png'
+    # filename = 'tracks/track_10x10.png'
+    #filename = 'tracks/test2.png'
+    #filename = 'tracks/test3.png'
+    #filename = 'tracks/test4.png'
+    #filename = 'tracks/test5.png'
+    #filename = 'tracks/test6.png'
+
+
+    im = Image.open(filename)
+    t = Track(im.resize((1000,1000)))
+
+
+    screen_width = t.size_x
+    screen_height = t.size_y
+    screen = pygame.display.set_mode([screen_width, screen_height])
+    pygame.display.set_caption("IA follow")
+
+    background_list = pygame.sprite.Group()
+    background_list.add(t)
+
+    robots_list = pygame.sprite.Group()
+
+    start_pos = t.start_point
+    start_heading = Robot.HEADING_MINUS_X
+
+    indiv = 100
+    max_gen = 20000
+
+    threads_count = 8
+    robot_groups = list()
+    for i in range(threads_count):
+        robot_groups.append(pygame.sprite.Group())
+
+
     if (key_control):
-        r.set_control_func(get_key_movement)
-    
-    r.set_control_unit(neurals[i])
-    robots_list.add(r)
-    
-    robot_groups[i%threads_count].add(r)
+        indiv = 1
 
-generation = 0
-generation_scores = list()
-bar = Bar('Processing', max=t.max_distance)
-bar.check_tty = False
-for g in range (max_gen):
-    bar.goto(0)
-    print ("Starting generation {}".format(generation))
-    for r in robots_list.sprites():
-        r.reset(start_pos, start_heading)
-    
-    step = 0
-    alive = True
-    stalled_count = 0
-    robots = robots_list.sprites()
-    while(alive):
+    neurals = list()
+
+    for i in range(indiv):
+        r = Robot(WHITE, 4, 10, 50, heading=start_heading, pos=start_pos)
+        r.set_path_read_func(t.get_path)
+        r.set_path_distance_func(t.get_distance)
         
-#        screen.blit(t.track_image, (0,0))
-        screen.blit(t.distances_image, (0,0))
+        req_inputs = len(r.get_inputs())
+        n = network (req_inputs, (4, 4, 4))
+        neurals.append(n)
+        r.set_control_func(n.evaluate)
+        r.set_control_unit(neurals[i])
         
-        step += 1
-        alive = 0
-        moved = False
+        # r.set_control_func(simple_control)
+        r.set_max_distance(t.max_distance)
         
-        threads = list()
-        for i, g in enumerate(robot_groups):
-            x = threading.Thread(target=update_thread, args=(g, screen))
-            x.start()
-            threads.append(x)
+        if (key_control):
+            r.set_control_func(get_key_movement)
         
-        for i, x in enumerate(threads):
-            x.join()
+        robots_list.add(r)
         
-        for event in pygame.event.get():
-            if event.type == pygame.KEYUP:
-                if event.key == pygame.K_k:
-                    print ("Kill everyone")
-                    for r in robots:
-                        r.alive = False
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
-        robots_alive = list()
+        robot_groups[i%threads_count].add(r)
+
+    graphics_enabled = True
+    generation = 0
+    generation_scores = list()
+    bar = Bar('Processing', max=t.max_distance)
+    bar.check_tty = False
+    for g in range (max_gen):
+        bar.goto(0)
+        print ("Starting generation {}".format(generation))
+        for r in robots_list.sprites():
+            r.reset(start_pos, start_heading)
+        
+        step = 0
+        alive = True
+        stalled_count = 0
+        robots = robots_list.sprites()
+        while(alive):
+            
+    #        screen.blit(t.track_image, (0,0))
+            screen.blit(t.distances_image, (0,0))
+            
+            step += 1
+            alive = 0
+            moved = False
+            
+            threads = list()
+            for i, g in enumerate(robot_groups):
+                x = threading.Thread(target=update_thread, args=(g, screen))
+                x.start()
+                threads.append(x)
+            
+            for i, x in enumerate(threads):
+                x.join()
+            
+            for event in pygame.event.get():
+                if event.type == pygame.KEYUP:
+                    if event.key == pygame.K_k:
+                        print ("Kill everyone")
+                        for r in robots:
+                            r.alive = False
+                    if event.key == pygame.K_v:
+                        graphics_enabled = not graphics_enabled
+                        if graphics_enabled:
+                            print("\nEnabled graphics")
+                        else:
+                            print("\nDisabled graphics")
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    exit()
+            robots_alive = list()
+            for r in robots:
+                if (r.alive):
+                    alive += 1
+                    robots_alive.append(r)
+                moved |= r.moved 
+
+            if moved:
+                stalled_count = 0
+            else:
+                stalled_count += 1
+                if (stalled_count > 10):
+                    print ("Stalled for {} steps. Interrupting generation here".format(stalled_count))
+                    break
+            
+            if (generation % 1 == 0):
+                if (graphics_enabled):
+                    update()
+            closest_distance = min([r.get_last_valid_distance() for r in robots if r.get_last_valid_distance()])
+            best_fitness = max([r.get_fitness() for r in robots])
+            #bar.goto(bar.max - closest_distance)
+
+        robots_sorted = sorted(robots, key=lambda r: r.get_fitness(), reverse=True)
+        
+        print("")
+        for r in robots_sorted[:5]:
+            print ("{:.2f}%\t{:.2f}%\t{:.2f}%\t{}".format(100*r.get_fitness(), 100*r.get_fitness_distances(), 100*r.get_fitness_sensors(), r.id))
+
+
+        print ("#"*40)
+        print ("\nEnded generation {} after {} steps".format(generation, step))
+        print ("Best robot got to distance {} and fitness {:.2f}%".format(closest_distance, 100*best_fitness))
+        generation_scores.append([closest_distance, best_fitness])
+        print ("#"*40)
+        generation += 1
+        
+        # input("press enter to continue")
+        
+
+        #get robots gains and fitness value to run genetic algorithm
+        results = list()
         for r in robots:
-            if (r.alive):
-                alive += 1
-                robots_alive.append(r)
-            moved |= r.moved 
+            gains = r.control_unit.get_gains()
+            fitness = r.get_fitness()
+            
+            robot_result = {"gains":gains, "fitness":fitness, "id":r.id}
+            results.append(robot_result)
 
-        if moved:
-            stalled_count = 0
-        else:
-            stalled_count += 1
-            if (stalled_count > 10):
-                print ("Stalled for {} steps. Interrupting generation here".format(stalled_count))
-                break
+        g = Genetic(results)
+        new_gains = g.evolve(keep_percent=0.20)
         
-        if (generation % 1 == 0):
-            update()
-        closest_distance = min([r.get_last_valid_distance() for r in robots if r.get_last_valid_distance() >= 0])
-        bar.goto(bar.max - closest_distance)
-        
-    distances = list()
-    robots_sorted = sorted(robots, key=lambda r: r.get_last_valid_distance())
-    
-    print("")
-    for r in robots_sorted[:5]:
-        distances.append(r.get_last_valid_distance())
-        print ("{}\t{}".format(r.get_last_valid_distance(), r.id))
-
-
-    print ("#"*40)
-    print ("\nEnded generation {} after {} steps".format(generation, step))
-    print ("Best robot got to distance {}".format(closest_distance))
-    generation_scores.append(closest_distance)
-    print ("#"*40)
-    generation += 1
-    
-
-    #get robots gains and fitness value to run genetic algorithm
-    results = list()
-    for r in robots:
-        gains = r.control_unit.get_gains()
-        fitness = t.max_distance - r.get_last_valid_distance()
-        
-        robot_result = {"gains":gains, "fitness":fitness, "id":r.id}
-        results.append(robot_result)
-
-    g = Genetic(results)
-    new_gains = g.evolve(keep_percent=0.20)
-    
-        
-    for i, n in enumerate(neurals):
-        n.set_gains(new_gains[i]["gains"])
+            
+        for i, n in enumerate(neurals):
+            n.set_gains(new_gains[i]["gains"])
